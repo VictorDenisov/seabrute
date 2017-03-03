@@ -15,8 +15,16 @@ struct Consumer {
         if (buf) {
             std::copy(buf.begin(), buf.end(), std::ostream_iterator<char>(std::cout));
             std::cout.flush();
-            return output->write(std::move(buf)).then([&] () { 
-                return output->flush();
+            return smp::submit_to(0, [] {
+                    static int counter = 0;
+                    return ++counter;
+                    }).then([&] (int value) {
+                        std::stringstream s;
+                        s << "We received this value of the counter " << value;
+                        output->write(s.str()).then([&] () { 
+                                return output->flush();
+                        });
+
             }).then([] () {
                 return unconsumed_remainder();
             });

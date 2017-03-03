@@ -1,6 +1,8 @@
-main: echo
+all: echo
+
 SEASTAR="./seastar"
-CXX=g++-5
+CXXFLAGS+=$(shell /usr/bin/pkg-config --cflags ./seastar/build/release/seastar.pc)
+LDFLAGS+=$(shell /usr/bin/pkg-config --libs ./seastar/build/release/seastar.pc)
+CXX=g++-4.9
 LD=gold
-CPPFLAGS+=$(shell pkg-config --cflags ${SEASTAR}/build/release/seastar.pc)
-LDFLAGS+=$(shell pkg-config --libs ${SEASTAR}/build/release/seastar.pc)
+
