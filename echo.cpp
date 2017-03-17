@@ -6,11 +6,11 @@
 
 using unconsumed_remainder = std::experimental::optional<temporary_buffer<char>>;
 
-struct Consumer {
+struct consumer {
     int * counter;
     output_stream<char> *output;
 
-    Consumer(int * _counter, output_stream<char> *_output) : counter(_counter), output(_output) {
+    consumer(int * _counter, output_stream<char> *_output) : counter(_counter), output(_output) {
     }
 
     future<unconsumed_remainder> operator()(temporary_buffer<char> buf) {
@@ -39,9 +39,9 @@ handle_connection (int * counter, connected_socket s, socket_address a) {
     input_stream<char> input = s.input();
     output_stream<char> output = s.output();
     return do_with(std::move(input), std::move(output), [counter] (input_stream<char> &input, output_stream<char> &output) {
-        auto consumer = Consumer(counter, &output);
-        return do_with(std::move(consumer), std::move(input), [] (auto &my_consumer, auto &input) {
-            return input.consume(my_consumer);
+        auto c = consumer(counter, &output);
+        return do_with(std::move(c), std::move(input), [] (auto &c, auto &input) {
+            return input.consume(c);
         });
     });
 }
