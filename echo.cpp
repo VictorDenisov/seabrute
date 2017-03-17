@@ -4,13 +4,29 @@
 #include "core/future-util.hh"
 #include <iostream>
 
+namespace seabrute {
+
 using unconsumed_remainder = std::experimental::optional<temporary_buffer<char>>;
 
+struct task {
+    int counter;
+    task() : counter(0) {}
+};
+
+class task_generator {
+    task current;
+public:
+    task get_next() {
+        current.counter++;
+        return current;
+    }
+};
+
 struct consumer {
-    int * counter;
+    task_generator *tsk_gen;
     output_stream<char> *output;
 
-    consumer(int * _counter, output_stream<char> *_output) : counter(_counter), output(_output) {
+    consumer(task_generator *_tsk_gen, output_stream<char> *_output) : tsk_gen(_tsk_gen), output(_output) {
     }
 
     future<unconsumed_remainder> operator()(temporary_buffer<char> buf) {
@@ -18,10 +34,10 @@ struct consumer {
             std::copy(buf.begin(), buf.end(), std::ostream_iterator<char>(std::cout));
             std::cout.flush();
             return smp::submit_to(0, [&] {
-                return ++(*counter);
-            }).then([&] (int value) {
+                return tsk_gen->get_next();
+            }).then([&] (task t) {
                 std::stringstream s;
-                s << "We received this value of the counter " << value << std::endl;
+                s << "We received this value of the counter " << t.counter << std::endl;
                 output->write(s.str()).then([this] () {
                     return output->flush();
                 });
@@ -35,11 +51,11 @@ struct consumer {
 };
 
 future<>
-handle_connection (int * counter, connected_socket s, socket_address a) {
+handle_connection (task_generator *tsk_gen, connected_socket s, socket_address a) {
     input_stream<char> input = s.input();
     output_stream<char> output = s.output();
-    return do_with(std::move(input), std::move(output), [counter] (input_stream<char> &input, output_stream<char> &output) {
-        auto c = consumer(counter, &output);
+    return do_with(std::move(input), std::move(output), [tsk_gen] (input_stream<char> &input, output_stream<char> &output) {
+        auto c = consumer(tsk_gen, &output);
         return do_with(std::move(c), std::move(input), [] (auto &c, auto &input) {
             return input.consume(c);
         });
@@ -47,25 +63,27 @@ handle_connection (int * counter, connected_socket s, socket_address a) {
 }
 
 future<>
-main_async(int * counter) {
+main_async(task_generator *tsk_gen) {
     listen_options lo;
     lo.reuse_address = true;
-    return do_with(listen(make_ipv4_address({1234}), lo), [counter] (auto& listener) {
-        return keep_doing([&listener, counter] () {
-            return listener.accept().then([counter] (connected_socket s, socket_address a) {
-                handle_connection(counter, std::move(s), std::move(a));
+    return do_with(listen(make_ipv4_address({1234}), lo), [tsk_gen] (auto& listener) {
+        return keep_doing([&listener, tsk_gen] () {
+            return listener.accept().then([tsk_gen] (connected_socket s, socket_address a) {
+                handle_connection(tsk_gen, std::move(s), std::move(a));
             });
         });
     });
 }
 
+} /* namespace seabrute */
+
 int main(int argc, char** argv) {
-    int counter = 0;
+    seabrute::task_generator tsk_gen;
     app_template app;
     try {
-        app.run(argc, argv, [&counter] {
-            return parallel_for_each(boost::irange<unsigned int>(0, smp::count), [&counter] (unsigned int core) {
-                return smp::submit_to(core, [&counter] {return main_async(&counter);});
+        app.run(argc, argv, [&tsk_gen] {
+            return parallel_for_each(boost::irange<unsigned int>(0, smp::count), [&tsk_gen] (unsigned int core) {
+                return smp::submit_to(core, [&tsk_gen] {return main_async(&tsk_gen);});
             });
         });
     } catch(std::runtime_error &e) {
