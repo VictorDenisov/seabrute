@@ -3,24 +3,63 @@
 #include "core/reactor.hh"
 #include "core/future-util.hh"
 #include <iostream>
+#include <vector>
+#include <string>
 
 namespace seabrute {
 
-using unconsumed_remainder = std::experimental::optional<temporary_buffer<char>>;
+/****** Config ******/
+
+namespace bpo = boost::program_options;
+
+struct config {
+    std::string alph;
+    std::string hash;
+    int length;
+
+    config(bpo::variables_map &args) :
+        alph(args["alph"].as< std::string >()),
+        hash(args["hash"].as< std::string >()),
+        length(args["length"].as<int>()) {}
+
+    static void register_options(bpo::options_description_easy_init &&add_options) {
+        add_options
+            ("alph,a", bpo::value< std::string >()->default_value(default_alph), "alphabet")
+            ("hash,h", bpo::value< std::string >()->default_value(default_hash), "hash")
+            ("length,n", bpo::value<int>()->default_value(default_length), "password length")
+            ;
+    }
+
+private:
+    static const std::string default_alph;
+    static const std::string default_hash;
+    static const int default_length = 4;
+};
+
+const std::string config::default_alph = std::string("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+const std::string config::default_hash = std::string("eMWCfUJDk9Lec");
+
+/********************/
 
 struct task {
-    int counter;
-    task() : counter(0) {}
+    std::string alph;
+    int from, to;
+    std::string hash;
+    std::string password;
+    task(std::string alph, int from, int to, std::string hash, std::string password) :
+        alph(alph), from(from), to(to), hash(hash), password(password) {}
 };
 
 class task_generator {
     task current;
 public:
+    task_generator(task &&task) : current(task) {}
     task get_next() {
-        current.counter++;
         return current;
     }
 };
+
+using unconsumed_remainder = std::experimental::optional<temporary_buffer<char>>;
 
 struct consumer {
     task_generator *tsk_gen;
@@ -37,7 +76,7 @@ struct consumer {
                 return tsk_gen->get_next();
             }).then([&] (task t) {
                 std::stringstream s;
-                s << "We received this value of the counter " << t.counter << std::endl;
+                s << "We received this value of the counter " << std::endl;
                 output->write(s.str()).then([this] () {
                     return output->flush();
                 });
@@ -78,10 +117,13 @@ main_async(task_generator *tsk_gen) {
 } /* namespace seabrute */
 
 int main(int argc, char** argv) {
-    seabrute::task_generator tsk_gen;
     app_template app;
+    namespace bpo = boost::program_options;
+    seabrute::config::register_options(app.add_options());
     try {
-        app.run(argc, argv, [&tsk_gen] {
+        app.run(argc, argv, [&app] {
+            auto config = seabrute::config(app.configuration());
+            seabrute::task_generator tsk_gen(seabrute::task(config.alph, 0, config.length, config.hash, std::string(config.length, '\0')));
             return parallel_for_each(boost::irange<unsigned int>(0, smp::count), [&tsk_gen] (unsigned int core) {
                 return smp::submit_to(core, [&tsk_gen] {return main_async(&tsk_gen);});
             });
