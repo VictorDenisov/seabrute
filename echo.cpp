@@ -50,18 +50,6 @@ struct task {
     std::string password;
     task(std::string alph, int from, int to, std::string hash, std::string password) noexcept :
         alph(alph), from(from), to(to), hash(hash), password(password) {}
-    task(const task &rvalue) noexcept :
-        alph(rvalue.alph), from(rvalue.from), to(rvalue.to), hash(rvalue.hash), password(rvalue.password) {}
-    task(const task &&rvalue) noexcept :
-        alph(rvalue.alph), from(rvalue.from), to(rvalue.to), hash(rvalue.hash), password(rvalue.password) {}
-    task& operator=(const task& rvalue) {
-        alph = rvalue.alph;
-        from = rvalue.from;
-        to = rvalue.to;
-        hash = rvalue.hash;
-        password = rvalue.password;
-        return *this;
-    }
 };
 
 class task_generator {
