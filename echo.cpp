@@ -44,12 +44,13 @@ const int config::default_length = 4;
 /********************/
 
 struct task {
-    std::string alph;
+    std::shared_ptr<std::string> alph, hash;
     int from, to;
-    std::string hash;
     std::string password;
     task(std::string alph, int from, int to, std::string hash, std::string password) noexcept :
-        alph(alph), from(from), to(to), hash(hash), password(password) {}
+        alph(std::make_shared<std::string>(alph)),
+        hash(std::make_shared<std::string>(hash)),
+        from(from), to(to), password(password) {}
 };
 
 class task_generator {
@@ -61,7 +62,7 @@ public:
         int len = current.to - current.from;
         if (len == 0)
             finished = true;
-        current.password.replace(current.from, len, len, current.alph[0]);
+        current.password.replace(current.from, len, len, (*current.alph)[0]);
     }
     boost::optional<task> get_next() {
         if (finished)
@@ -74,12 +75,12 @@ public:
         auto pass_shift = current.password.length() - current.to;
         auto pos = current.password.rbegin() + pass_shift;
         for (auto i = index.rbegin(); i != index.rend(); ++i, ++pos) {
-            if (*i == current.alph.length() - 1) {
+            if (*i == current.alph->length() - 1) {
                 *i = 0;
-                *pos = current.alph[0];
+                *pos = (*current.alph)[0];
             } else {
                 ++*i;
-                *pos = current.alph[*i];
+                *pos = (*current.alph)[*i];
                 return current;
             }
         }
