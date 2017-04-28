@@ -8,6 +8,8 @@
 
 namespace seabrute {
 
+#include "legacy.hpp"
+
 /****** Config ******/
 
 namespace bpo = boost::program_options;
@@ -51,6 +53,29 @@ struct task {
         alph(std::make_shared<std::string>(alph)),
         hash(std::make_shared<std::string>(hash)),
         from(from), to(to), password(password) {}
+    temporary_buffer<char> serialize() {
+        task_t task;
+        password.copy(task.result.password, sizeof(task.result.password));
+        task.len = password.length();
+        task.result.password[task.len] = 0;
+        task.from = from;
+        task.to = to;
+        task.brute_mode = BM_ITER;
+        uint32_t sz = sizeof(task) + alph->length() + hash->length() + 2;
+        temporary_buffer<char> buf(sz + sizeof(sz));
+        auto pos = buf.get_write();
+        memcpy(pos, &sz, sizeof(sz));
+        pos += sizeof(sz);
+        memcpy(pos, &task, sizeof(task));
+        pos += sizeof(task);
+        alph->copy(pos, alph->length());
+        pos += alph->length();
+        *pos++ = 0;
+        hash->copy(pos, hash->length());
+        pos += hash->length();
+        *pos++ = 0;
+        return buf;
+    }
 };
 
 class task_generator {
@@ -128,6 +153,7 @@ handle_connection (std::shared_ptr<task_generator> tsk_gen, connected_socket s, 
     input_stream<char> input = s.input();
     output_stream<char> output = s.output();
     return do_with(std::move(input), std::move(output), [tsk_gen] (input_stream<char> &input, output_stream<char> &output) {
+        /* send all 4 tasks, then in consumer parse one result and send one task */
         auto c = consumer(tsk_gen, &output);
         return do_with(std::move(c), std::move(input), [] (auto &c, auto &input) {
             return input.consume(c);
