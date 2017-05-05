@@ -2,6 +2,7 @@
 #include "core/seastar.hh"
 #include "core/reactor.hh"
 #include "core/future-util.hh"
+#include <boost/range/irange.hpp>
 #include <iostream>
 #include <vector>
 #include <string>
@@ -154,9 +155,24 @@ handle_connection (std::shared_ptr<task_generator> tsk_gen, connected_socket s, 
     output_stream<char> output = s.output();
     return do_with(std::move(input), std::move(output), [tsk_gen] (input_stream<char> &input, output_stream<char> &output) {
         /* send all 4 tasks, then in consumer parse one result and send one task */
+        auto range = boost::irange(0, 3);
         auto c = consumer(tsk_gen, &output);
-        return do_with(std::move(c), std::move(input), [] (auto &c, auto &input) {
-            return input.consume(c);
+        return do_for_each(range, [&output, &tsk_gen] (int) {
+            return smp::submit_to(0, [&] {
+                return tsk_gen->get_next();
+            }).then([&] (boost::optional<task> ot) {
+                if (ot) {
+                    return output.write(ot->serialize());
+                } else {
+                    return output.close();  /* we should handle this better, mb raise an exception */
+                }
+            });
+        }).then([&output] () {
+            return output.flush();
+        }).then([&] {
+            return do_with(std::move(c), std::move(input), [] (auto &c, auto &input) {
+                return input.consume(c);
+            });
         });
     });
 }
