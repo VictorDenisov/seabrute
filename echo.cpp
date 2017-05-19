@@ -6,6 +6,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <arpa/inet.h>
 
 namespace seabrute {
 
@@ -65,6 +66,7 @@ struct task {
         uint32_t sz = sizeof(task) + alph->length() + hash->length() + 2;
         temporary_buffer<char> buf(sz + sizeof(sz));
         auto pos = buf.get_write();
+        sz = htonl(sz);
         memcpy(pos, &sz, sizeof(sz));
         pos += sizeof(sz);
         memcpy(pos, &task, sizeof(task));
@@ -126,20 +128,10 @@ struct consumer {
 
     future<unconsumed_remainder> operator()(temporary_buffer<char> buf) {
         if (buf) {
-            std::copy(buf.begin(), buf.end(), std::ostream_iterator<char>(std::cout));
-            std::cout.flush();
             return smp::submit_to(0, [&] {
                 return tsk_gen->get_next();
             }).then([&] (boost::optional<task> ot) {
-                std::stringstream s;
-                if (ot) {
-                    s << "We received this value of the counter " << ot->password << std::endl;
-                } else {
-                    s << "We didn't receive any value." << std::endl;
-                }
-                output->write(s.str()).then([this] () {
-                    return output->flush();
-                });
+                return;
             }).then([] () {
                 return unconsumed_remainder();
             });
@@ -155,12 +147,12 @@ handle_connection (std::shared_ptr<task_generator> tsk_gen, connected_socket s, 
     output_stream<char> output = s.output();
     return do_with(std::move(input), std::move(output), [tsk_gen] (input_stream<char> &input, output_stream<char> &output) {
         /* send all 4 tasks, then in consumer parse one result and send one task */
-        auto range = boost::irange(0, 3);
+        auto range = boost::irange(0, 4);
         auto c = consumer(tsk_gen, &output);
         return do_for_each(range, [&output, &tsk_gen] (int) {
             return smp::submit_to(0, [&] {
                 return tsk_gen->get_next();
-            }).then([&] (boost::optional<task> ot) {
+            }).then([&output] (boost::optional<task> ot) {
                 if (ot) {
                     return output.write(ot->serialize());
                 } else {
@@ -169,7 +161,7 @@ handle_connection (std::shared_ptr<task_generator> tsk_gen, connected_socket s, 
             });
         }).then([&output] () {
             return output.flush();
-        }).then([&] {
+        }).then([c{std::move(c)}, &input] {
             return do_with(std::move(c), std::move(input), [] (auto &c, auto &input) {
                 return input.consume(c);
             });
