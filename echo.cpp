@@ -200,23 +200,31 @@ main_async(std::shared_ptr<task_generator> tsk_gen) {
     });
 }
 
-} /* namespace seabrute */
-
-int main(int argc, char** argv) {
-    app_template app;
-    namespace bpo = boost::program_options;
-    seabrute::config::register_options(app.add_options());
-    try {
-        app.run(argc, argv, [&app] {
-            auto config = seabrute::config(app.configuration());
+class app : public app_template {
+public:
+    app() {
+        config::register_options(add_options());
+    }
+    int
+    run(int ac, char ** av) {
+        return app_template::run(ac, av, [this] {
+            auto config = seabrute::config(configuration());
             auto tsk_gen = std::make_shared<seabrute::task_generator>(seabrute::task(config.alph, 0, config.length, config.hash, std::string(config.length, '\0')));
             return parallel_for_each(boost::irange<unsigned int>(0, smp::count), [tsk_gen] (unsigned int core) mutable {
                 return smp::submit_to(core, [tsk_gen] () mutable {return main_async(tsk_gen);});
             });
         });
+    }
+};
+
+} /* namespace seabrute */
+
+int main(int argc, char** argv) {
+    seabrute::app app;
+    try {
+        return app.run(argc, argv);
     } catch(std::runtime_error &e) {
         std::cerr << "Couldn't start application: " << e.what() << std::endl;
         return 1;
     }
-    return 0;
 }
