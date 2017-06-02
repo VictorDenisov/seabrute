@@ -187,20 +187,22 @@ handle_connection (std::shared_ptr<task_generator> tsk_gen, connected_socket s, 
     });
 }
 
-future<>
-main_async(std::shared_ptr<task_generator> tsk_gen) {
-    listen_options lo;
-    lo.reuse_address = true;
-    return do_with(listen(make_ipv4_address({1234}), lo), [tsk_gen] (auto& listener) mutable {
-        return keep_doing([&listener, tsk_gen] () mutable {
-            return listener.accept().then([tsk_gen] (connected_socket s, socket_address a) mutable {
-                handle_connection(tsk_gen, std::move(s), std::move(a));
+class app : public app_template {
+    std::shared_ptr<seabrute::task_generator> tsk_gen;
+
+    future<>
+    main_async() {
+        listen_options lo;
+        lo.reuse_address = true;
+        return do_with(listen(make_ipv4_address({1234}), lo), [this] (auto& listener) mutable {
+            return keep_doing([&listener, this] () mutable {
+                return listener.accept().then([this] (connected_socket s, socket_address a) mutable {
+                    handle_connection(tsk_gen, std::move(s), std::move(a));
+                });
             });
         });
-    });
-}
+    }
 
-class app : public app_template {
 public:
     app() {
         config::register_options(add_options());
@@ -209,9 +211,9 @@ public:
     run(int ac, char ** av) {
         return app_template::run(ac, av, [this] {
             auto config = seabrute::config(configuration());
-            auto tsk_gen = std::make_shared<seabrute::task_generator>(seabrute::task(config.alph, 0, config.length, config.hash, std::string(config.length, '\0')));
-            return parallel_for_each(boost::irange<unsigned int>(0, smp::count), [tsk_gen] (unsigned int core) mutable {
-                return smp::submit_to(core, [tsk_gen] () mutable {return main_async(tsk_gen);});
+            tsk_gen = std::make_shared<seabrute::task_generator>(seabrute::task(config.alph, 0, config.length, config.hash, std::string(config.length, '\0')));
+            return parallel_for_each(boost::irange<unsigned int>(0, smp::count), [this] (unsigned int core) mutable {
+                return smp::submit_to(core, [this] () mutable {return main_async();});
             });
         });
     }
