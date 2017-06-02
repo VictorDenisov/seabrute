@@ -117,54 +117,59 @@ public:
     }
 };
 
-using unconsumed_remainder = std::experimental::optional<temporary_buffer<char>>;
-
-struct consumer {
-    std::shared_ptr<task_generator> tsk_gen;
-    output_stream<char> *output;
-
-    consumer(std::shared_ptr<task_generator> _tsk_gen, output_stream<char> *_output) : tsk_gen(_tsk_gen), output(_output) {
-    }
-
-    future<unconsumed_remainder> operator()(temporary_buffer<char> buf) {
-        if (buf) {
-            return smp::submit_to(0, [&] {
-                return tsk_gen->get_next();
-            }).then([&] (boost::optional<task> ot) {
-                return;
-            }).then([] () {
-                return unconsumed_remainder();
-            });
+future<>
+send_next_task(std::shared_ptr<task_generator> tsk_gen, output_stream<char> &output) {
+    return smp::submit_to(0, [tsk_gen, &output] () mutable {
+        return tsk_gen->get_next();
+    }).then([&output] (boost::optional<task> ot) {
+        if (ot) {
+            std::cerr << "Sending task with password=\"" << ot->password << "\"" << std::endl;
+            ot->from = ot->to;
+            return output.write(ot->serialize());
         } else {
-            return make_ready_future<unconsumed_remainder>(unconsumed_remainder());
+            std::cerr << "Closing connection" << std::endl;
+            return output.close();  /* we should handle this better, mb raise an exception */
         }
-    }
-};
+    });
+}
+
+future<>
+read_cycle (std::shared_ptr<task_generator> tsk_gen, input_stream<char> &input, output_stream<char> &output) {
+    return repeat([tsk_gen, &input, &output] () mutable {
+        return input.read_exactly(sizeof(uint32_t))
+        .then([&input] (temporary_buffer<char> buf) {
+            if (!buf) {
+                return make_ready_future<temporary_buffer<char>>(std::move(buf));
+            }
+            uint32_t sz = ntohl(*reinterpret_cast<const uint32_t*>(buf.get()));
+            return input.read_exactly(sz);
+        }).then([tsk_gen, &output] (temporary_buffer<char> buf) mutable {
+            if (!buf) {
+                return make_ready_future<stop_iteration>(stop_iteration::yes); // EOF
+            }
+            // TODO: parse result from message
+            return send_next_task(tsk_gen, output).then([&output] {
+                return output.flush();
+            }).then([] {
+                return make_ready_future<stop_iteration>(stop_iteration::no);
+            });
+        });
+    });
+}
 
 future<>
 handle_connection (std::shared_ptr<task_generator> tsk_gen, connected_socket s, socket_address a) {
     input_stream<char> input = s.input();
     output_stream<char> output = s.output();
-    return do_with(std::move(input), std::move(output), [tsk_gen] (input_stream<char> &input, output_stream<char> &output) {
+    return do_with(std::move(input), std::move(output), [tsk_gen] (input_stream<char> &input, output_stream<char> &output) mutable {
         /* send all 4 tasks, then in consumer parse one result and send one task */
         auto range = boost::irange(0, 4);
-        auto c = consumer(tsk_gen, &output);
-        return do_for_each(range, [&output, &tsk_gen] (int) {
-            return smp::submit_to(0, [&] {
-                return tsk_gen->get_next();
-            }).then([&output] (boost::optional<task> ot) {
-                if (ot) {
-                    return output.write(ot->serialize());
-                } else {
-                    return output.close();  /* we should handle this better, mb raise an exception */
-                }
-            });
+        return do_for_each(range, [&output, tsk_gen] (int) mutable {
+            return send_next_task(tsk_gen, output);
         }).then([&output] () {
             return output.flush();
-        }).then([c{std::move(c)}, &input] {
-            return do_with(std::move(c), std::move(input), [] (auto &c, auto &input) {
-                return input.consume(c);
-            });
+        }).then([tsk_gen, &input, &output] () mutable {
+            return read_cycle(tsk_gen, input, output);
         });
     });
 }
@@ -173,9 +178,9 @@ future<>
 main_async(std::shared_ptr<task_generator> tsk_gen) {
     listen_options lo;
     lo.reuse_address = true;
-    return do_with(listen(make_ipv4_address({1234}), lo), [tsk_gen] (auto& listener) {
-        return keep_doing([&listener, tsk_gen] () {
-            return listener.accept().then([tsk_gen] (connected_socket s, socket_address a) {
+    return do_with(listen(make_ipv4_address({1234}), lo), [tsk_gen] (auto& listener) mutable {
+        return keep_doing([&listener, tsk_gen] () mutable {
+            return listener.accept().then([tsk_gen] (connected_socket s, socket_address a) mutable {
                 handle_connection(tsk_gen, std::move(s), std::move(a));
             });
         });
@@ -192,8 +197,8 @@ int main(int argc, char** argv) {
         app.run(argc, argv, [&app] {
             auto config = seabrute::config(app.configuration());
             auto tsk_gen = std::make_shared<seabrute::task_generator>(seabrute::task(config.alph, 0, config.length, config.hash, std::string(config.length, '\0')));
-            return parallel_for_each(boost::irange<unsigned int>(0, smp::count), [tsk_gen] (unsigned int core) {
-                return smp::submit_to(core, [tsk_gen] {return main_async(tsk_gen);});
+            return parallel_for_each(boost::irange<unsigned int>(0, smp::count), [tsk_gen] (unsigned int core) mutable {
+                return smp::submit_to(core, [tsk_gen] () mutable {return main_async(tsk_gen);});
             });
         });
     } catch(std::runtime_error &e) {
