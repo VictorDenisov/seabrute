@@ -81,6 +81,13 @@ struct task {
     }
 };
 
+struct result : result_t {
+    static const result deserialize(temporary_buffer<char> &&buf) {
+        assert(buf.size() == sizeof(result));
+        return *reinterpret_cast<const result*>(buf.get());
+    }
+};
+
 class task_generator {
     task current;
     std::vector<unsigned int> index;
@@ -147,7 +154,13 @@ read_cycle (std::shared_ptr<task_generator> tsk_gen, input_stream<char> &input, 
             if (!buf) {
                 return make_ready_future<stop_iteration>(stop_iteration::yes); // EOF
             }
-            // TODO: parse result from message
+            result res = result::deserialize(std::move(buf));
+            if (res.found) {
+                // TODO: stop server entirely
+                return output.close().then([] {
+                    return make_ready_future<stop_iteration>(stop_iteration::yes);
+                });
+            }
             return send_next_task(tsk_gen, output).then([&output] {
                 return output.flush();
             }).then([] {
