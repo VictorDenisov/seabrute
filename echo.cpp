@@ -180,8 +180,6 @@ class app : public app_template {
             auto range = boost::irange(0, 4);
             return do_for_each(range, [this, &output] (int) mutable {
                 return send_next_task(output);
-            }).then([&output] () {
-                return output.flush();
             }).then([this, &input, &output] () mutable {
                 return read_cycle(input, output);
             });
@@ -211,9 +209,8 @@ class app : public app_template {
                         return make_ready_future<stop_iteration>(stop_iteration::yes);
                     });
                 }
-                return send_next_task(output).then([&output] {
-                    return output.flush();
-                }).then([] {
+                return send_next_task(output)
+                .then([] {
                     return make_ready_future<stop_iteration>(stop_iteration::no);
                 });
             });
@@ -224,11 +221,14 @@ class app : public app_template {
     send_next_task(output_stream<char> &output) {
         return smp::submit_to(0, [this, &output] () mutable {
             return tsk_gen->get_next();
-        }).then([&output] (boost::optional<task> ot) {
+        }).then([this, &output] (boost::optional<task> ot) {
             if (ot) {
                 std::cerr << "Sending task with password=\"" << ot->password << "\"" << std::endl;
                 ot->from = ot->to;
-                return output.write(ot->serialize());
+                return output.write(ot->serialize())
+                .then([&output] () mutable {
+                    return output.flush();
+                });
             } else {
                 std::cerr << "Closing connection" << std::endl;
                 return output.close();  /* we should handle this better, mb raise an exception */
