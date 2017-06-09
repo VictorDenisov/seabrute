@@ -96,6 +96,11 @@ class task_generator {
     std::vector<unsigned int> index;
     bool started, finished;
 public:
+    class generator_finished : std::exception {
+        virtual const char* what() const noexcept {
+            return "Generator finished";
+        }
+    };
     task_generator(task &&task) : current(task), index(task.to - task.from), started(false), finished(false) {
         int len = current.to - current.from;
         if (len == 0)
@@ -104,11 +109,11 @@ public:
         std::cerr << "Task generator address " << (void*)this << std::endl;
         original_address = this;
     }
-    boost::optional<task> get_next() {
+    task get_next() {
         std::cerr << "Task generator address in get_next " << (void*)this << std::endl;
         assert (this == original_address);
         if (finished)
-            return boost::none;
+            throw generator_finished();
         if (not started) {
             started = true;
             return current;
@@ -127,7 +132,7 @@ public:
             }
         }
         finished = true;
-        return boost::none;
+        throw generator_finished();
     }
 };
 task_generator* task_generator::original_address = nullptr;
@@ -182,6 +187,9 @@ class app : public app_template {
                 return send_next_task(output);
             }).then([this, &input, &output] () mutable {
                 return read_cycle(input, output);
+            }).handle_exception_type([&output] (task_generator::generator_finished&) mutable {
+                std::cerr << "Closing connection" << std::endl;
+                return output.close();  /* we should handle this better, mb raise an exception */
             });
         });
     }
@@ -221,18 +229,13 @@ class app : public app_template {
     send_next_task(output_stream<char> &output) {
         return smp::submit_to(0, [this, &output] () mutable {
             return tsk_gen->get_next();
-        }).then([this, &output] (boost::optional<task> ot) {
-            if (ot) {
-                std::cerr << "Sending task with password=\"" << ot->password << "\"" << std::endl;
-                ot->from = ot->to;
-                return output.write(ot->serialize())
-                .then([&output] () mutable {
-                    return output.flush();
-                });
-            } else {
-                std::cerr << "Closing connection" << std::endl;
-                return output.close();  /* we should handle this better, mb raise an exception */
-            }
+        }).then([this, &output] (task ot) {
+            std::cerr << "Sending task with password=\"" << ot.password << "\"" << std::endl;
+            ot.from = ot.to;
+            return output.write(ot.serialize())
+            .then([&output] () mutable {
+                return output.flush();
+            });
         });
     }
     
@@ -240,6 +243,7 @@ public:
     app() {
         config::register_options(add_options());
     }
+
     int
     run(int ac, char ** av) {
         return app_template::run(ac, av, [this] {
