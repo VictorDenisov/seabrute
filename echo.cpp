@@ -4,6 +4,7 @@
 #include "core/future-util.hh"
 #include <boost/range/irange.hpp>
 #include <iostream>
+#include <list>
 #include <vector>
 #include <string>
 #include <arpa/inet.h>
@@ -137,16 +138,52 @@ public:
 };
 task_generator* task_generator::original_address = nullptr;
 
+template<class T>
+class self_deleting_weak_ref {
+    using container_t = std::list<self_deleting_weak_ref<T>*>;
+    container_t *cont;
+    std::weak_ptr<T> weak_ref;
+    typename container_t::iterator pos;
+
+    self_deleting_weak_ref(container_t &cont) : cont(&cont), pos(cont.insert(cont.begin(), this)) {
+    }
+
+    class deleter {
+        self_deleting_weak_ref<T> *sdwr_ptr;
+    public:
+        deleter(self_deleting_weak_ref<T> *p) : sdwr_ptr(p) {}
+        void operator()(T *p) const {
+            sdwr_ptr->cont->erase(sdwr_ptr->pos);
+            delete sdwr_ptr;
+            delete p;
+        }
+    };
+
+public:
+    template<class U>
+    static std::shared_ptr<T> create(container_t &cont, U &&arg) {
+        T *p = new T(std::move(arg));
+        auto sdwr = new self_deleting_weak_ref(cont);
+        deleter a_deleter(sdwr);
+        auto sp = std::shared_ptr<T>(p, a_deleter);
+        sdwr->weak_ref = sp;
+        return sp;
+    }
+    std::shared_ptr<T> lock() {
+        return weak_ref.lock();
+    }
+};
+
 class app : public app_template {
     std::shared_ptr<seabrute::task_generator> tsk_gen;
-    std::vector<std::weak_ptr<server_socket>> listeners;
+    typename self_deleting_weak_ref<server_socket>::container_t listeners;
 
     future<>
     main_async() {
         listen_options lo;
         lo.reuse_address = true;
-        auto listener = std::make_shared<server_socket>(listen(make_ipv4_address({1234}), lo));
-        return add_listener(listener).then([this, listener] () mutable {
+        return add_listener(server_socket(listen(make_ipv4_address({1234}), lo)))
+        .then([this] (std::shared_ptr<server_socket> listener) mutable {
             return keep_doing([this, listener] () mutable {
                 return listener->accept().then([this] (connected_socket s, socket_address a) mutable {
                     handle_connection(std::move(s), std::move(a));
@@ -155,11 +192,11 @@ class app : public app_template {
         });
     }
 
-    future<>
-    add_listener(std::shared_ptr<server_socket> listener) {
-        return smp::submit_to(0, [this, listener] () mutable {
-            listeners.push_back(listener);
-            return make_ready_future<>();
+    future<std::shared_ptr<server_socket>>
+    add_listener(server_socket &&listener) {
+        return smp::submit_to(0, [this, listener = std::move(listener)] () mutable {
+            auto ptr = self_deleting_weak_ref<server_socket>::create(listeners, listener);
+            return make_ready_future<std::shared_ptr<server_socket>>(ptr);
         });
     }
 
@@ -167,7 +204,7 @@ class app : public app_template {
     close() {
         return smp::submit_to(0, [this] () mutable {
             for (auto weak_listener : listeners) {
-                auto listener = weak_listener.lock();
+                auto listener = weak_listener->lock();
                 if (listener) {
                     listener->abort_accept();
                 }
