@@ -174,29 +174,37 @@ public:
     }
 };
 
+class app;
+
+class listener : public std::enable_shared_from_this<listener> {
+    server_socket ss;
+public:
+    listener(server_socket &&_ss) : ss(std::move(_ss)) {}
+    future<> accept_loop(app *_app);
+    void close() {
+        ss.abort_accept();
+    }
+};
+
 class app : public app_template {
     std::shared_ptr<seabrute::task_generator> tsk_gen;
-    typename self_deleting_weak_ref<server_socket>::container_t listeners;
+    typename self_deleting_weak_ref<listener>::container_t listeners;
 
     future<>
     main_async() {
         listen_options lo;
         lo.reuse_address = true;
         return add_listener(server_socket(listen(make_ipv4_address({1234}), lo)))
-        .then([this] (std::shared_ptr<server_socket> listener) mutable {
-            return keep_doing([this, listener] () mutable {
-                return listener->accept().then([this] (connected_socket s, socket_address a) mutable {
-                    handle_connection(std::move(s), std::move(a));
-                });
-            });
+        .then([this] (std::shared_ptr<listener> l) mutable {
+            return l->accept_loop(this);
         });
     }
 
-    future<std::shared_ptr<server_socket>>
-    add_listener(server_socket &&listener) {
-        return smp::submit_to(0, [this, listener = std::move(listener)] () mutable {
-            auto ptr = self_deleting_weak_ref<server_socket>::create(listeners, listener);
-            return make_ready_future<std::shared_ptr<server_socket>>(ptr);
+    future<std::shared_ptr<listener>>
+    add_listener(server_socket &&ss) {
+        return smp::submit_to(0, [this, ss = std::move(ss)] () mutable {
+            auto ptr = self_deleting_weak_ref<listener>::create(listeners, ss);
+            return make_ready_future<std::shared_ptr<listener>>(ptr);
         });
     }
 
@@ -206,13 +214,14 @@ class app : public app_template {
             for (auto weak_listener : listeners) {
                 auto listener = weak_listener->lock();
                 if (listener) {
-                    listener->abort_accept();
+                    listener->close();
                 }
             }
             return make_ready_future<>();
         });
     }
 
+public: // FIXME: move all methods to separate classes
     future<>
     handle_connection (connected_socket s, socket_address a) {
         input_stream<char> input = s.input();
@@ -292,6 +301,17 @@ public:
         });
     }
 };
+
+future<>
+listener::accept_loop(app *_app) {
+    auto sthis = shared_from_this();
+    return keep_doing([sthis, _app] () mutable {
+        return sthis->ss.accept().then([_app] (connected_socket s, socket_address a) mutable {
+            _app->handle_connection(std::move(s), std::move(a));
+        });
+    });
+}
+
 
 } /* namespace seabrute */
 
