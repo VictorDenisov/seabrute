@@ -190,12 +190,21 @@ public:
 class app : public app_template {
     std::shared_ptr<seabrute::task_generator> tsk_gen;
     typename self_deleting_weak_ref<listener>::container_t listeners;
+    bool closing = false;
 
     future<>
-    main_async() {
+    main_async(unsigned int core) {
         listen_options lo;
         lo.reuse_address = true;
-        return add_listener(server_socket(listen(make_ipv4_address({1234}), lo)))
+        std::cerr << "Listen on core " << core << std::endl;
+        auto list = listen(make_ipv4_address({1234}), lo);
+        if (closing) {
+            std::cerr << "App is already closing, not creating socket on core " << core << std::endl;
+            return make_ready_future<>();
+        }
+        std::cerr << "Creating socket on core " << core << std::endl;
+        auto ss = server_socket(std::move(list));
+        return add_listener(std::move(ss))
         .then([this] (std::shared_ptr<listener> l) mutable {
             return l->accept_loop(this);
         });
@@ -203,8 +212,10 @@ class app : public app_template {
 
     future<std::shared_ptr<listener>>
     add_listener(server_socket &&ss) {
+        std::cerr << "Adding listener.." << std::endl;
         return smp::submit_to(0, [this, ss = std::move(ss)] () mutable {
             auto ptr = self_deleting_weak_ref<listener>::create(listeners, ss);
+            std::cerr << "Added listener " << ptr << std::endl;
             return make_ready_future<std::shared_ptr<listener>>(ptr);
         });
     }
@@ -223,8 +234,12 @@ public:
 
     future<>
     close() {
+        std::cerr << "Closing app " << this << std::endl;
+        closing = true;
         return smp::submit_to(0, [this] () mutable {
+            std::cerr << "Closing app " << this << " on CPU #0" << std::endl;
             for (auto weak_listener : listeners) {
+                std::cerr << "Going to close listener by ref " << weak_listener << std::endl;
                 auto listener = weak_listener->lock();
                 if (listener) {
                     listener->close();
@@ -239,8 +254,13 @@ public:
         return app_template::run(ac, av, [this] {
             auto config = seabrute::config(configuration());
             tsk_gen = std::make_shared<seabrute::task_generator>(seabrute::task(config.alph, 0, config.length, config.hash, std::string(config.length, '\0')));
+            std::cerr << "Will start " << smp::count << " listeners" << std::endl;
             return parallel_for_each(boost::irange<unsigned int>(0, smp::count), [this] (unsigned int core) mutable {
-                return smp::submit_to(core, [this] () mutable {return main_async();});
+                std::cerr << "Starting listener on core " << core << std::endl;
+                return smp::submit_to(core, [this, core] () mutable {
+                    std::cerr << "Starting main_async on core " << core << std::endl;
+                    return main_async(core);
+                });
             });
         });
     }
@@ -267,6 +287,7 @@ class server_connection {
                 }
                 result res = result::deserialize(std::move(buf));
                 if (res.found) {
+                    std::cerr << "Found result on connection " << this << std::endl;
                     // TODO: stop server entirely
                     return output.close().then([_app] () mutable {
                         return _app->close();
@@ -315,7 +336,9 @@ future<>
 listener::accept_loop(app *_app) {
     auto sthis = shared_from_this();
     return keep_doing([sthis, _app] () mutable {
-        return sthis->ss.accept().then([_app] (connected_socket s, socket_address a) mutable {
+        std::cerr << "Starting accept loop for listener " << sthis << std::endl;
+        return sthis->ss.accept().then([sthis, _app] (connected_socket s, socket_address a) mutable {
+            std::cerr << "Accepted connection from " << a << " in listener " << sthis << std::endl;
             return do_with(server_connection(std::move(s)), [_app] (server_connection &sc) {
                 return sc.life_cycle(_app);
             });
