@@ -7,20 +7,12 @@
 #include <list>
 #include <vector>
 #include "config.hpp"
+#include "result.hpp"
 #include "task.hpp"
 
 namespace seabrute {
 
-#include "legacy.hpp"
-
 /********************/
-
-struct result : result_t {
-    static const result deserialize(temporary_buffer<char> &&buf) {
-        assert(buf.size() == sizeof(result));
-        return *reinterpret_cast<const result*>(buf.get());
-    }
-};
 
 class task_generator {
     static task_generator* original_address;
