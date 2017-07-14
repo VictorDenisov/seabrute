@@ -1,5 +1,6 @@
-all: echo
-echo: app.o echo.o config.o listener.o result.o server_connection.o task.o task_generator.o
+all: seabrute
+seabrute: app.o config.o listener.o main.o result.o server_connection.o task.o task_generator.o
+	$(LINK.o) $^ $(LOADLIBES) $(LDLIBS) -o $@
 
 SEASTAR="./seastar"
 CXXFLAGS+=$(shell /usr/bin/pkg-config --cflags ./seastar/build/debug/seastar.pc)
