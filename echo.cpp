@@ -8,43 +8,11 @@
 #include <vector>
 #include <string>
 #include <arpa/inet.h>
+#include "config.hpp"
 
 namespace seabrute {
 
 #include "legacy.hpp"
-
-/****** Config ******/
-
-namespace bpo = boost::program_options;
-
-struct config {
-    std::string alph;
-    std::string hash;
-    int length;
-
-    config(bpo::variables_map &args) :
-        alph(args["alph"].as< std::string >()),
-        hash(args["hash"].as< std::string >()),
-        length(args["length"].as<int>()) {}
-
-    static void register_options(bpo::options_description_easy_init &&add_options) {
-        add_options
-            ("alph,a", bpo::value< std::string >()->default_value(default_alph), "alphabet")
-            ("hash,h", bpo::value< std::string >()->default_value(default_hash), "hash")
-            ("length,n", bpo::value<int>()->default_value(default_length), "password length")
-            ;
-    }
-
-private:
-    static const std::string default_alph;
-    static const std::string default_hash;
-    static const int default_length;
-};
-
-//const std::string config::default_alph = std::string("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
-const std::string config::default_alph = std::string("csit");
-const std::string config::default_hash = std::string("eMWCfUJDk9Lec");
-const int config::default_length = 4;
 
 /********************/
 
@@ -342,17 +310,17 @@ listener::accept_loop(app *_app) {
     auto sthis = shared_from_this();
     return repeat([sthis, _app] () mutable {
         std::cerr << "Starting accept loop for listener " << sthis << std::endl;
-	if (_app->is_closing()) {
+        if (_app->is_closing()) {
             std::cerr << "App is closing, get out of here " << sthis << std::endl;
-	    return make_ready_future<stop_iteration>(stop_iteration::yes);
-	}
+            return make_ready_future<stop_iteration>(stop_iteration::yes);
+        }
         return sthis->ss.accept().then([sthis, _app] (connected_socket s, socket_address a) mutable {
             std::cerr << "Accepted connection from " << a << " in listener " << sthis << std::endl;
             return do_with(server_connection(std::move(s)), [_app] (server_connection &sc) {
                 return sc.life_cycle(_app);
             });
         }).then([] {
-	    return make_ready_future<stop_iteration>(stop_iteration::no);
+            return make_ready_future<stop_iteration>(stop_iteration::no);
         });
     });
 }

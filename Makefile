@@ -1,4 +1,5 @@
 all: echo
+echo: echo.o config.o
 
 SEASTAR="./seastar"
 CXXFLAGS+=$(shell /usr/bin/pkg-config --cflags ./seastar/build/debug/seastar.pc)
