@@ -1,6 +1,9 @@
 #include <boost/range/irange.hpp>
+#include <util/log.hh>
 #include "result.hpp"
 #include "server_connection.hpp"
+
+static seastar::logger logger("server_connection");
 
 namespace seabrute {
 
@@ -19,7 +22,7 @@ future<> server_connection::read_cycle(app *_app) {
             }
             result res = result::deserialize(std::move(buf));
             if (res.found) {
-                std::cerr << "Found result on connection " << this << std::endl;
+                logger.debug("Found result on connection {}", this);
                 // TODO: stop server entirely
                 return output.close().then([_app] () mutable {
                     return _app->close();
@@ -36,7 +39,7 @@ future<> server_connection::read_cycle(app *_app) {
 
 future<> server_connection::send_next_task(app *_app) {
     return _app->get_next_task().then([this] (task ot) mutable {
-        std::cerr << "Sending task with password=\"" << ot.password << "\"" << std::endl;
+        logger.debug("Sending task with password=\"{}\"", ot.password);
         ot.from = ot.to;
         return output.write(ot.serialize())
         .then([this] () mutable {
@@ -55,7 +58,7 @@ future<> server_connection::life_cycle(app *_app) {
     }).then([this, _app] () mutable {
         return read_cycle(_app);
     }).handle_exception_type([this] (task_generator::generator_finished&) mutable {
-        std::cerr << "Closing connection" << std::endl;
+        logger.debug("Closing connection");
         return output.close();  /* we should handle this better, mb raise an exception */
     });
 }

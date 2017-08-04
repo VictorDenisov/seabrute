@@ -1,5 +1,8 @@
 #include <iostream>
+#include <util/log.hh>
 #include "task_generator.hpp"
+
+static seastar::logger logger("task_generator");
 
 namespace seabrute {
 
@@ -10,12 +13,12 @@ task_generator::task_generator(task &&task) : current(task), index(task.to - tas
     if (len == 0)
         finished = true;
     current.password.replace(current.from, len, len, (*current.alph)[0]);
-    std::cerr << "Task generator address " << (void*)this << std::endl;
+    logger.debug("Task generator address {}", (void*)this);
     original_address = this;
 }
 
 task task_generator::get_next() {
-    std::cerr << "Task generator address in get_next " << (void*)this << std::endl;
+    logger.debug("Task generator address in get_next {}", (void*)this);
     assert (this == original_address);
     if (finished)
         throw generator_finished();

@@ -1,8 +1,11 @@
 #include <arpa/inet.h>
 #include <iostream>
 #include <cstring>
+#include <util/log.hh>
 #include "task.hpp"
 #include "legacy.hpp"
+
+static seastar::logger logger("task");
 
 namespace seabrute {
 
@@ -22,7 +25,7 @@ temporary_buffer<char> task::serialize() {
     uint32_t sz = sizeof(task) + alph->length() + hash->length() + 2;
     temporary_buffer<char> buf(sz + sizeof(sz));
     auto pos = buf.get_write();
-    std::cerr << "Serializing message of size " << sz << " at address " << (void*)pos << std::endl;
+    logger.debug("Serializing message of size {} at address {}", sz, (void*)pos);
     sz = htonl(sz);
     std::memcpy(pos, &sz, sizeof(sz));
     pos += sizeof(sz);
@@ -34,7 +37,7 @@ temporary_buffer<char> task::serialize() {
     hash->copy(pos, hash->length());
     pos += hash->length();
     *pos++ = 0;
-    std::cerr << "Finished serializing message at address " << (void*)pos << std::endl;
+    logger.debug("Finished serializing message at address {}", (void*)pos);
     return buf;
 }
 
