@@ -1,21 +1,24 @@
 #include <boost/range/irange.hpp>
 #include <core/reactor.hh>
 #include <iostream>
+#include <util/log.hh>
 #include "app.hpp"
 #include "config.hpp"
 #include "listener.hpp"
+
+static seastar::logger logger("app");
 
 namespace seabrute {
 
 future<> app::main_async(unsigned int core) {
     listen_options lo;
     lo.reuse_address = true;
-    std::cerr << "Listen on core " << core << std::endl;
+    logger.debug("Listen on core {}", core);
     auto list = listen(make_ipv4_address({1234}), lo);
-    std::cerr << "Creating socket on core " << core << std::endl;
+    logger.debug("Creating socket on core {}", core);
     auto ss = server_socket(std::move(list));
     if (closing) {
-        std::cerr << "App is already closing, not creating socket on core " << core << std::endl;
+        logger.debug("App is already closing, not creating socket on core ", core);
         return make_ready_future<>();
     }
     return add_listener(std::move(ss))
@@ -25,10 +28,10 @@ future<> app::main_async(unsigned int core) {
 }
 
 future<std::shared_ptr<listener>> app::add_listener(server_socket &&ss) {
-    std::cerr << "Adding listener.." << std::endl;
+    logger.debug("Adding listener..");
     return smp::submit_to(0, [this, ss = std::move(ss)] () mutable {
         auto ptr = self_deleting_weak_ref<listener>::create(listeners, ss);
-        std::cerr << "Added listener " << ptr << std::endl;
+        logger.debug("Added listener ", ptr);
         return make_ready_future<std::shared_ptr<listener>>(ptr);
     });
 }
@@ -48,12 +51,12 @@ future<task> app::get_next_task() {
 }
 
 future<> app::close() {
-    std::cerr << "Closing app " << this << std::endl;
+    logger.debug("Closing app {}", this);
     closing = true;
     return smp::submit_to(0, [this] () mutable {
-        std::cerr << "Closing app " << this << " on CPU #0" << std::endl;
+        logger.debug("Closing app {} on CPU #0", this);
         for (auto weak_listener : listeners) {
-            std::cerr << "Going to close listener by ref " << weak_listener << std::endl;
+            logger.debug("Going to close listener by ref {}", weak_listener);
             auto listener = weak_listener->lock();
             if (listener) {
                 listener->close();
@@ -65,13 +68,14 @@ future<> app::close() {
 
 int app::run(int ac, char ** av) {
     return app_template::run(ac, av, [this] {
+        seastar::logger_registry().set_all_loggers_level(seastar::log_level::debug);
         auto config = seabrute::config(configuration());
         tsk_gen = std::make_shared<seabrute::task_generator>(seabrute::task(config.alph, 0, config.length, config.hash, std::string(config.length, '\0')));
-        std::cerr << "Will start " << smp::count << " listeners" << std::endl;
+        logger.debug("Will start {} listeners", smp::count);
         return parallel_for_each(boost::irange<unsigned int>(0, smp::count), [this] (unsigned int core) mutable {
-            std::cerr << "Starting listener on core " << core << std::endl;
+            logger.debug("Starting listener on core {}", core);
             return smp::submit_to(core, [this, core] () mutable {
-                std::cerr << "Starting main_async on core " << core << std::endl;
+                logger.debug("Starting main_async on core {}", core);
                 return main_async(core);
             });
         });
