@@ -71,6 +71,7 @@ int app::run(int ac, char ** av) {
         seastar::logger_registry().set_all_loggers_level(seastar::log_level::debug);
         auto config = seabrute::config(configuration());
         tsk_gen = std::make_shared<seabrute::task_generator>(seabrute::task(config.alph, 0, config.length, config.hash, std::string(config.length, '\0')));
+        engine().at_exit(std::bind(&app::close, this));
         logger.debug("Will start {} listeners", smp::count);
         return parallel_for_each(boost::irange<unsigned int>(0, smp::count), [this] (unsigned int core) mutable {
             logger.debug("Starting listener on core {}", core);
