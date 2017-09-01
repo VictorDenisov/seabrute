@@ -22,8 +22,8 @@ future<> app::main_async(unsigned int core) {
         return make_ready_future<>();
     }
     return add_listener(std::move(ss))
-    .then([this] (std::shared_ptr<listener> l) mutable {
-        return l->accept_loop(this);
+    .then([this, core] (std::shared_ptr<listener> l) mutable {
+        return l->accept_loop(this, core);
     });
 }
 
@@ -55,14 +55,14 @@ future<> app::close() {
     closing = true;
     return smp::submit_to(0, [this] () mutable {
         logger.debug("Closing app {} on CPU #0", this);
-        for (auto weak_listener : listeners) {
+        return parallel_for_each(listeners, [] (auto weak_listener) {
             logger.debug("Going to close listener by ref {}", weak_listener);
             auto listener = weak_listener->lock();
             if (listener) {
                 listener->close();
             }
-        }
-        return make_ready_future<>();
+            return make_ready_future<>();
+        });
     });
 }
 

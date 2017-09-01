@@ -8,11 +8,12 @@ namespace seabrute {
 class app;
 
 class listener : public std::enable_shared_from_this<listener> {
+    unsigned int core;
     server_socket ss;
 public:
     listener(server_socket &&_ss);
-    future<> accept_loop(app *_app);
-    void close();
+    future<> accept_loop(app *_app, unsigned int core);
+    future<> close();
 };
 
 }

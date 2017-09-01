@@ -1,3 +1,4 @@
+#include <core/reactor.hh>
 #include <util/log.hh>
 #include "app.hpp"
 #include "listener.hpp"
@@ -9,7 +10,8 @@ namespace seabrute {
 
 listener::listener(server_socket &&_ss) : ss(std::move(_ss)) {}
 
-future<> listener::accept_loop(app *_app) {
+future<> listener::accept_loop(app *_app, unsigned int core) {
+    this->core = core;
     auto sthis = shared_from_this();
     return repeat([sthis, _app] () mutable {
         logger.debug("Starting accept loop for listener {}", sthis); 
@@ -24,13 +26,23 @@ future<> listener::accept_loop(app *_app) {
             });
         }).then([] {
             return make_ready_future<stop_iteration>(stop_iteration::no);
+        }).handle_exception([] (std::exception_ptr e_ptr) {
+            try {
+                std::rethrow_exception(e_ptr);
+            } catch (const std::exception &e) {
+                logger.info("Got exception in listener loop, exiting: {}", e.what());
+            }
+            return make_ready_future<stop_iteration>(stop_iteration::yes);
         });
     });
 }
 
-void listener::close() {
+future<> listener::close() {
     logger.debug("Closing listener {}", this);
-    ss.abort_accept();
+    return smp::submit_to(core, [this] () mutable {
+        ss.abort_accept();
+        return make_ready_future<>();
+    });
 }
 
 }
