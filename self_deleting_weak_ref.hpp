@@ -25,9 +25,9 @@ class self_deleting_weak_ref {
     };
 
 public:
-    template<class U>
-    static std::shared_ptr<T> create(container_t &cont, U &&arg) {
-        T *p = new T(std::move(arg));
+    template<class ...Args>
+    static std::shared_ptr<T> create(container_t &cont, Args&& ...args) {
+        T *p = new T(std::move(args)...);
         auto sdwr = new self_deleting_weak_ref(cont);
         deleter a_deleter(sdwr);
         auto sp = std::shared_ptr<T>(p, a_deleter);
