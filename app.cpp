@@ -14,9 +14,7 @@ future<> app::main_async(unsigned int core) {
     listen_options lo;
     lo.reuse_address = true;
     logger.trace("Listen on core {}", core);
-    auto list = listen(make_ipv4_address({1234}), lo);
-    logger.trace("Creating socket on core {}", core);
-    auto ss = server_socket(std::move(list));
+    auto ss = listen(make_ipv4_address({1234}), lo);
     if (closing) {
         logger.debug("App is already closing, not creating socket on core ", core);
         return make_ready_future<>();
