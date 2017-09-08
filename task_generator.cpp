@@ -13,12 +13,12 @@ task_generator::task_generator(task &&task) : current(task), index(task.to - tas
     if (len == 0)
         finished = true;
     current.password.replace(current.from, len, len, (*current.alph)[0]);
-    logger.debug("Task generator address {}", (void*)this);
+    logger.trace("Task generator address {}", (void*)this);
     original_address = this;
 }
 
 task task_generator::get_next() {
-    logger.debug("Task generator address in get_next {}", (void*)this);
+    logger.trace("Task generator address in get_next {}", (void*)this);
     assert (this == original_address);
     if (finished)
         throw generator_finished();
