@@ -59,7 +59,7 @@ future<> app::close() {
             logger.debug("Going to close listener by ref {}", weak_listener);
             auto listener = weak_listener->lock();
             if (listener) {
-                listener->close();
+                return listener->close();
             }
             return make_ready_future<>();
         });
