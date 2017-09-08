@@ -8,10 +8,9 @@ static seastar::logger logger("listener");
 
 namespace seabrute {
 
-listener::listener(server_socket &&_ss) : ss(std::move(_ss)) {}
+listener::listener(server_socket &&_ss, unsigned int core) : ss(std::move(_ss)), core(core) {}
 
-future<> listener::accept_loop(app *_app, unsigned int core) {
-    this->core = core;
+future<> listener::accept_loop(app *_app) {
     auto sthis = shared_from_this();
     return repeat([sthis, _app] () mutable {
         logger.debug("Starting accept loop for listener {}", sthis); 

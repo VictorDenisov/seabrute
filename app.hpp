@@ -16,7 +16,7 @@ class app : public app_template {
     bool closing = false;
 
     future<> main_async(unsigned int core);
-    future<std::shared_ptr<listener>> add_listener(server_socket &&ss);
+    future<std::shared_ptr<listener>> add_listener(server_socket &&ss, unsigned int core);
 
 public:
     app();

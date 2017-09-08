@@ -21,16 +21,16 @@ future<> app::main_async(unsigned int core) {
         logger.debug("App is already closing, not creating socket on core ", core);
         return make_ready_future<>();
     }
-    return add_listener(std::move(ss))
+    return add_listener(std::move(ss), core)
     .then([this, core] (std::shared_ptr<listener> l) mutable {
-        return l->accept_loop(this, core);
+        return l->accept_loop(this);
     });
 }
 
-future<std::shared_ptr<listener>> app::add_listener(server_socket &&ss) {
+future<std::shared_ptr<listener>> app::add_listener(server_socket &&ss, unsigned int core) {
     logger.debug("Adding listener..");
-    return smp::submit_to(0, [this, ss = std::move(ss)] () mutable {
-        auto ptr = self_deleting_weak_ref<listener>::create(listeners, ss);
+    return smp::submit_to(0, [this, ss = std::move(ss), core] () mutable {
+        auto ptr = self_deleting_weak_ref<listener>::create(listeners, ss, core);
         logger.debug("Added listener ", ptr);
         return make_ready_future<std::shared_ptr<listener>>(ptr);
     });
