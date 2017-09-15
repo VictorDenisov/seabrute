@@ -11,15 +11,14 @@ namespace seabrute {
 listener::listener(server_socket &&_ss, unsigned int core) : ss(std::move(_ss)), core(core) {}
 
 future<> listener::accept_loop(app *_app) {
-    auto sthis = shared_from_this();
-    return repeat([sthis, _app] () mutable {
-        logger.trace("Starting accept loop for listener {}", sthis); 
+    return repeat([this, _app] () mutable {
+        logger.trace("Starting accept loop for listener {}", this); 
         if (_app->is_closing()) {
-            logger.trace("App is closing, get out of here {}", sthis);
+            logger.trace("App is closing, get out of here {}", this);
             return make_ready_future<stop_iteration>(stop_iteration::yes);
         }
-        return sthis->ss.accept().then([sthis, _app] (connected_socket s, socket_address a) mutable {
-            logger.trace("Accepted connection from {} in listener {}", a, sthis);
+        return ss.accept().then([this, _app] (connected_socket s, socket_address a) mutable {
+            logger.trace("Accepted connection from {} in listener {}", a, this);
             return do_with(server_connection(std::move(s)), [_app] (server_connection &sc) {
                 return sc.life_cycle(_app);
             });

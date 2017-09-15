@@ -2,21 +2,24 @@
 #define __APP_HPP__
 
 #include <core/app-template.hh>
+#include <list>
 #include <net/api.hh>
 #include "listener.hpp"
-#include "self_deleting_weak_ref.hpp"
 #include "task.hpp"
 #include "task_generator.hpp"
 
 namespace seabrute {
 
+using listener_ptr = std::list<listener>::iterator;
+
 class app : public app_template {
     std::shared_ptr<seabrute::task_generator> tsk_gen;
-    typename self_deleting_weak_ref<listener>::container_t listeners;
+    std::list<listener> listeners;
     bool closing = false;
+    promise<> main_asyncs_done_promise;
 
     future<> main_async(unsigned int core);
-    future<std::shared_ptr<listener>> add_listener(server_socket &&ss, unsigned int core);
+    future<listener_ptr> add_listener(server_socket &&ss, unsigned int core);
 
 public:
     app();

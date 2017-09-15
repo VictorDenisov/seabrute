@@ -7,7 +7,7 @@ namespace seabrute {
 
 class app;
 
-class listener : public std::enable_shared_from_this<listener> {
+class listener {
     server_socket ss;
     unsigned int core;
 public:

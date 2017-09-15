@@ -20,17 +20,20 @@ future<> app::main_async(unsigned int core) {
         return make_ready_future<>();
     }
     return add_listener(std::move(ss), core)
-    .then([this, core] (std::shared_ptr<listener> l) mutable {
-        return l->accept_loop(this);
+    .then([this, core] (listener_ptr l) mutable {
+        return l->accept_loop(this)
+        .finally([this, l] {
+            listeners.erase(l);
+            return make_ready_future<>();
+        });
     });
 }
 
-future<std::shared_ptr<listener>> app::add_listener(server_socket &&ss, unsigned int core) {
+future<listener_ptr> app::add_listener(server_socket &&ss, unsigned int core) {
     logger.trace("Adding listener..");
     return smp::submit_to(0, [this, ss = std::move(ss), core] () mutable {
-        auto ptr = self_deleting_weak_ref<listener>::create(listeners, ss, core);
-        logger.trace("Added listener ", ptr);
-        return make_ready_future<std::shared_ptr<listener>>(ptr);
+        auto pos = listeners.insert(listeners.begin(), listener(std::move(ss), core));
+        return make_ready_future<listener_ptr>(pos);
     });
 }
 
@@ -53,13 +56,10 @@ future<> app::close() {
     closing = true;
     return smp::submit_to(0, [this] () mutable {
         logger.trace("Closing app {} on CPU #0", this);
-        return parallel_for_each(listeners, [] (auto weak_listener) {
-            logger.trace("Going to close listener by ref {}", weak_listener);
-            auto listener = weak_listener->lock();
-            if (listener) {
-                return listener->close();
-            }
-            return make_ready_future<>();
+        return parallel_for_each(listeners, [] (listener &listener) {
+            return listener.close();
+        }).then([this] () mutable {
+            return seastar::when_all_succeed(main_asyncs_done_promise.get_future());
         });
     });
 }
@@ -77,6 +77,8 @@ int app::run(int ac, char ** av) {
                 logger.trace("Starting main_async on core {}", core);
                 return main_async(core);
             });
+        }).finally([this] () mutable {
+            main_asyncs_done_promise.set_value();
         });
     });
 }
