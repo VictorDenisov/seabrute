@@ -5,13 +5,15 @@
 
 namespace seabrute {
 
+using seastar::future;
+
 class app;
 
 class listener {
-    server_socket ss;
+    seastar::server_socket ss;
     unsigned int core;
 public:
-    listener(server_socket &&_ss, unsigned int core);
+    listener(seastar::server_socket &&_ss, unsigned int core);
     future<> accept_loop(app *_app);
     future<> close();
 };

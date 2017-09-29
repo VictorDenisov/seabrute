@@ -8,18 +8,21 @@ static seastar::logger logger("listener");
 
 namespace seabrute {
 
-listener::listener(server_socket &&_ss, unsigned int core) : ss(std::move(_ss)), core(core) {}
+using seastar::make_ready_future;
+using seastar::stop_iteration;
+
+listener::listener(seastar::server_socket &&_ss, unsigned int core) : ss(std::move(_ss)), core(core) {}
 
 future<> listener::accept_loop(app *_app) {
-    return repeat([this, _app] () mutable {
+    return seastar::repeat([this, _app] () mutable {
         logger.trace("Starting accept loop for listener {}", this); 
         if (_app->is_closing()) {
             logger.trace("App is closing, get out of here {}", this);
             return make_ready_future<stop_iteration>(stop_iteration::yes);
         }
-        return ss.accept().then([this, _app] (connected_socket s, socket_address a) mutable {
+        return ss.accept().then([this, _app] (connected_socket s, seastar::socket_address a) mutable {
             logger.trace("Accepted connection from {} in listener {}", a, this);
-            return do_with(server_connection(std::move(s)), [_app] (server_connection &sc) {
+            return seastar::do_with(server_connection(std::move(s)), [_app] (server_connection &sc) {
                 return sc.life_cycle(_app);
             });
         }).then([] {
@@ -37,7 +40,7 @@ future<> listener::accept_loop(app *_app) {
 
 future<> listener::close() {
     logger.trace("Closing listener {}", this);
-    return smp::submit_to(core, [this] () mutable {
+    return seastar::smp::submit_to(core, [this] () mutable {
         ss.abort_accept();
         return make_ready_future<>();
     });

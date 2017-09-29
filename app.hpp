@@ -11,15 +11,16 @@
 namespace seabrute {
 
 using listener_ptr = std::list<listener>::iterator;
+using seastar::future;
 
-class app : public app_template {
+class app : public seastar::app_template {
     std::shared_ptr<seabrute::task_generator> tsk_gen;
     std::list<listener> listeners;
     bool closing = false;
-    promise<> main_asyncs_done_promise;
+    seastar::promise<> main_asyncs_done_promise;
 
     future<> main_async(unsigned int core);
-    future<listener_ptr> add_listener(server_socket &&ss, unsigned int core);
+    future<listener_ptr> add_listener(seastar::server_socket &&ss, unsigned int core);
 
 public:
     app();

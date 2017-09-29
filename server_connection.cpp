@@ -7,8 +7,13 @@ static seastar::logger logger("server_connection");
 
 namespace seabrute {
 
+using seastar::do_for_each;
+using seastar::make_ready_future;
+using seastar::stop_iteration;
+using seastar::temporary_buffer;
+
 future<> server_connection::read_cycle(app *_app) {
-    return repeat([this, _app] () mutable {
+    return seastar::repeat([this, _app] () mutable {
         return input.read_exactly(sizeof(uint32_t))
         .then([this] (temporary_buffer<char> buf) {
             if (!buf) {

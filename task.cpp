@@ -14,6 +14,8 @@ task::task(std::string alph, int from, int to, std::string hash, std::string pas
     hash(std::make_shared<std::string>(hash)),
     from(from), to(to), password(password) {}
 
+using seastar::temporary_buffer;
+
 temporary_buffer<char> task::serialize() {
     task_t task;
     password.copy(task.result.password, sizeof(task.result.password));

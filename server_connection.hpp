@@ -6,10 +6,13 @@
 
 namespace seabrute {
 
+using seastar::connected_socket;
+using seastar::future;
+
 class server_connection {
     connected_socket cs;
-    input_stream<char> input;
-    output_stream<char> output;
+    seastar::input_stream<char> input;
+    seastar::output_stream<char> output;
 
     future<> read_cycle(app *_app);
     future<> send_next_task(app *_app);

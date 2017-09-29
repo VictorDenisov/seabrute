@@ -7,7 +7,7 @@
 namespace seabrute {
 
 struct result : result_t {
-    static const result deserialize(temporary_buffer<char> &&buf);
+    static const result deserialize(seastar::temporary_buffer<char> &&buf);
 };
 
 }
