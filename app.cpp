@@ -56,6 +56,9 @@ future<task> app::get_next_task() {
 }
 
 future<> app::close() {
+    if (closing) {
+        return make_ready_future<>();
+    }
     logger.debug("Closing app {}", this);
     closing = true;
     return smp::submit_to(0, [this] () mutable {

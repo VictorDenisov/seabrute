@@ -30,7 +30,7 @@ future<> server_connection::read_cycle(app *_app) {
                 logger.debug("Found result on connection {}", this);
                 // TODO: stop server entirely
                 return output.close().then([_app] () mutable {
-                    return _app->close();
+                    _app->close();
                 }).then([] {
                     return make_ready_future<stop_iteration>(stop_iteration::yes);
                 });
