@@ -52,6 +52,10 @@ bool app::is_closing() {
 future<task> app::get_next_task() {
     return seastar::smp::submit_to(0, [this] () mutable {
         return tsk_gen->get_next();
+    }).handle_exception_type([this] (task_generator::generator_finished& e) mutable -> future<task> {
+        logger.debug("Generator depleted, closing app");
+        close();
+        throw e;
     });
 }
 

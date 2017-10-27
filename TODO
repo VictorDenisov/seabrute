@@ -1,1 +1,2 @@
 * review strings usage, reduce memory copy operations
+* proper accounting of sent tasks, don't close app immediately after generator is depleted
